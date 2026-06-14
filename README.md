@@ -59,6 +59,8 @@ In July 2025 the AUR packages `firefox-patch-bin`, `librewolf-fix-bin` and `zen-
 
 aurscan is built to flag exactly that class of thing — the unfamiliar trick, not just the one you happen to know.
 
+In June 2026 the **Atomic Arch** campaign drove the point home at scale: attackers adopted **1,500+ orphaned** AUR packages and — in some cases using git commit *forgery* to impersonate a trusted maintainer — added a post-install step running `npm install atomic-lockfile` (then `bun install js-digest` in a second wave), pulling a Rust credential stealer and, when built as root, an **eBPF rootkit**. The package name and history were unchanged; only the build instructions, and who wrote them, had quietly changed. aurscan's prompt and static rules encode these exact signatures.
+
 ## 🔌 How it hooks into yay
 
 > [!NOTE]
@@ -169,7 +171,7 @@ When a package is flagged:
 
 **Add your own auditor guidance.** Drop a Markdown file at `~/.config/aurscan/instructions.md` (or point `AURSCAN_INSTRUCTIONS` at any path). Its contents are *appended* to the built-in instructions — it can sharpen the auditor but never weakens the core rules or the prompt-injection hardening. A ready-to-copy example lives at [`packaging/instructions.example.md`](packaging/instructions.example.md); it tells the auditor to weight low-popularity packages, recent maintainer changes, and changes with no obvious technical reason far more heavily.
 
-**Static rules run first.** A deterministic catalog (adapted from [KiefStudioMA/ks-aur-scanner](https://github.com/KiefStudioMA/ks-aur-scanner), GPL-3.0, codes kept compatible) matches known patterns — `curl|bash`, reverse shells, credential/browser-profile access, systemd persistence, the `npm install atomic-lockfile` campaign signature, and more — offline and for free. Every hit is fed to the model as prior context. Run them alone with no model call:
+**Static rules run first.** A deterministic catalog (adapted from [KiefStudioMA/ks-aur-scanner](https://github.com/KiefStudioMA/ks-aur-scanner), GPL-3.0, codes kept compatible) matches known patterns — `curl|bash`, reverse shells, credential/browser-profile access, systemd persistence, the `npm install atomic-lockfile` / `bun install js-digest` campaign signatures, eBPF-rootkit artifacts, and more — offline and for free. Every hit is fed to the model as prior context. Run them alone with no model call:
 
 ```bash
 aurscan --rules-only <pkgname|./dir>     # or set AURSCAN_RULES_ONLY=1
