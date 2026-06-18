@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+
+## [0.4.1] - 2026-06-18
+
+### Fixed
+- Claude Code CLI backend now parses the array/streaming `--output-format json`
+  shape emitted by newer CLIs (v2.1.x), not only the single-object envelope.
+  This resolves the "malformed JSON (fail-closed)" seen on the Claude
+  subscription backend (#17): the parser walks the record array, takes the final
+  `result`, and surfaces an `authentication_failed`/401 record under `--debug`.
+
+
 ## [0.4.0] - 2026-06-18
 
 ### Added
@@ -42,6 +53,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `aurscan --prebuild <dir>` gate entrypoint (non-interactive, fail-closed, no
   editor chaining) used by the paru hook.
 - `sparu` symlink installed alongside `syay`/`aurscan-edit`.
+- **Codex CLI backend.** `AURSCAN_BACKEND=codex` runs the scan through the
+  `codex` CLI (read-only sandbox, ephemeral, rules ignored); model selectable
+  via `AURSCAN_CODEX_MODEL`. Auto-detected after `claude` when present.
+- OpenAI-compatible requests now send `response_format: json_object` so servers
+  that honor it return strict JSON.
 ### Changed
 - Factored the verdict/usage printer so the interactive gate and the
   non-interactive `Decide` path share output formatting.

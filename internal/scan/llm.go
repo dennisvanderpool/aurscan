@@ -153,23 +153,8 @@ func callClaudeCLI(ctx context.Context, instructions, content string, estIn int)
 	// JSON envelope mode yields exact usage and total_cost_usd.
 	raw, err := run("-p", "--output-format", "json", instructions)
 	if err == nil {
-		var env struct {
-			Result string  `json:"result"`
-			Cost   float64 `json:"total_cost_usd"`
-			Usage  struct {
-				In       int `json:"input_tokens"`
-				Out      int `json:"output_tokens"`
-				CacheCre int `json:"cache_creation_input_tokens"`
-				CacheRd  int `json:"cache_read_input_tokens"`
-			} `json:"usage"`
-		}
-		if jerr := json.Unmarshal([]byte(raw), &env); jerr == nil && env.Result != "" {
-			return env.Result, Usage{
-				In:       env.Usage.In + env.Usage.CacheCre + env.Usage.CacheRd,
-				Out:      env.Usage.Out,
-				CostUSD:  env.Cost,
-				HaveCost: true,
-			}, nil
+		if text, u, ok := parseClaudeEnvelope(raw, estIn); ok {
+			return text, u, nil
 		}
 		// Envelope not understood: treat stdout as the model text, estimate.
 		dbg("claude --output-format json envelope not understood; using raw stdout as model text (issue #17 territory)")
@@ -180,6 +165,75 @@ func callClaudeCLI(ctx context.Context, instructions, content string, estIn int)
 		return raw2, Usage{In: estIn, Out: estimateTokens(raw2), Estimated: true}, nil
 	}
 	return "", Usage{}, err
+}
+
+// claudeEnvelope is one record from the Claude Code CLI's JSON output. The CLI
+// emits EITHER a single object (older/compact mode) OR an array of these
+// records (newer/streaming mode, e.g. v2.1.x), where the final "result" record
+// carries the model text, usage and cost. We accept both shapes (issue #17).
+type claudeEnvelope struct {
+	Type    string  `json:"type"`
+	Subtype string  `json:"subtype"`
+	IsError bool    `json:"is_error"`
+	Error   string  `json:"error"`
+	Status  int     `json:"error_status"`
+	Result  string  `json:"result"`
+	Cost    float64 `json:"total_cost_usd"`
+	Usage   struct {
+		In       int `json:"input_tokens"`
+		Out      int `json:"output_tokens"`
+		CacheCre int `json:"cache_creation_input_tokens"`
+		CacheRd  int `json:"cache_read_input_tokens"`
+	} `json:"usage"`
+}
+
+func (e claudeEnvelope) toUsage() Usage {
+	return Usage{
+		In:       e.Usage.In + e.Usage.CacheCre + e.Usage.CacheRd,
+		Out:      e.Usage.Out,
+		CostUSD:  e.Cost,
+		HaveCost: true,
+	}
+}
+
+// parseClaudeEnvelope extracts the model text + usage from either CLI output
+// shape. ok is false when the output is neither recognised shape (caller then
+// falls back to treating stdout as raw text).
+func parseClaudeEnvelope(raw string, estIn int) (string, Usage, bool) {
+	trimmed := strings.TrimSpace(raw)
+
+	// Shape A: a single JSON object.
+	if strings.HasPrefix(trimmed, "{") {
+		var e claudeEnvelope
+		if json.Unmarshal([]byte(trimmed), &e) == nil && e.Result != "" {
+			return e.Result, e.toUsage(), true
+		}
+		return "", Usage{}, false
+	}
+
+	// Shape B: an array of records (streaming transcript). Take the last
+	// "result" record; surface an authentication/error record under --debug.
+	if strings.HasPrefix(trimmed, "[") {
+		var recs []claudeEnvelope
+		if json.Unmarshal([]byte(trimmed), &recs) != nil {
+			return "", Usage{}, false
+		}
+		var resultRec *claudeEnvelope
+		for i := range recs {
+			r := recs[i]
+			if r.Type == "result" && r.Result != "" {
+				resultRec = &recs[i]
+			}
+			if r.Status == 401 || r.Error == "authentication_failed" {
+				dbg("claude CLI reported authentication failure (status=%d %q) — "+
+					"the subscription/credentials were not accepted", r.Status, r.Error)
+			}
+		}
+		if resultRec != nil && !resultRec.IsError {
+			return resultRec.Result, resultRec.toUsage(), true
+		}
+	}
+	return "", Usage{}, false
 }
 
 func callCodexCLI(ctx context.Context, instructions, content string, estIn int) (string, Usage, error) {
