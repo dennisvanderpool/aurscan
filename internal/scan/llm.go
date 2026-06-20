@@ -332,13 +332,12 @@ func callOpenAI(parent context.Context, to time.Duration, instructions, content 
 	if fb := os.Getenv("AURSCAN_OPENAI_URL_FALLBACK"); fb != "" {
 		urls = append(urls, fb)
 	}
-	model := os.Getenv("AURSCAN_OPENAI_MODEL")
-	if model == "" {
-		model = "default-model"
-	}
 	apiKey := openAIKey()
-	body, _ := json.Marshal(map[string]any{
-		"model":           model,
+	// The model is sent only when AURSCAN_OPENAI_MODEL is set. Leaving it out
+	// lets a routing proxy (LiteLLM and similar) select the model itself, so you
+	// can switch models at the proxy without touching this env var or restarting.
+	// Set AURSCAN_OPENAI_MODEL for servers that require an explicit model.
+	payload := map[string]any{
 		"temperature":     0.1,
 		"max_tokens":      maxOutTokens,
 		"response_format": map[string]string{"type": "json_object"},
@@ -346,7 +345,11 @@ func callOpenAI(parent context.Context, to time.Duration, instructions, content 
 			{"role": "system", "content": instructions},
 			{"role": "user", "content": content},
 		},
-	})
+	}
+	if model := os.Getenv("AURSCAN_OPENAI_MODEL"); model != "" {
+		payload["model"] = model
+	}
+	body, _ := json.Marshal(payload)
 
 	dbgBlock("openai request body", string(body))
 	var lastErr error

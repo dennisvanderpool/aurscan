@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- The OpenAI-compatible backend no longer sends a `model` field when
+  `AURSCAN_OPENAI_MODEL` is unset (previously it sent the placeholder
+  `default-model`). This lets a routing proxy such as LiteLLM select the model
+  itself, so models can be switched at the proxy without editing env vars or
+  restarting. Set `AURSCAN_OPENAI_MODEL` to pin a specific model on servers that
+  require one.
+
 ### Fixed
 - **paru interactive build decision now works (#3).** The `--prebuild` hook
   prompts over `/dev/tty`, so you can abort or override a flagged package even

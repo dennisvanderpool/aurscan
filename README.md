@@ -136,7 +136,7 @@ Auto-detected, in this order — **option 1 needs no API key at all**:
 1. **Claude Code CLI** (`claude`) in `PATH` and logged in → uses your existing Claude subscription. Reports **exact cost** per scan.
 2. **`ANTHROPIC_API_KEY`** → direct API (`claude-sonnet-4-6` by default). Reports exact tokens; cost computed from a built-in price table.
 3. **Codex CLI** (`codex`) in `PATH` and logged in → uses your existing Codex subscription. Tokens and cost are estimated/not available from the CLI output.
-4. **Local / self-hosted model** via `AURSCAN_OPENAI_URL` → any OpenAI-compatible `/chat/completions` endpoint (**llama.cpp, Ollama, vLLM, LocalAI**). Fully private; set `AURSCAN_OPENAI_URL_FALLBACK` for automatic failover (e.g. GPU host → local CPU). The model is swappable via `AURSCAN_OPENAI_MODEL`, and an API key (for proxies like **LiteLLM**) via `AURSCAN_OPENAI_API_KEY` (or the conventional `OPENAI_API_KEY`).
+4. **Local / self-hosted model** via `AURSCAN_OPENAI_URL` → any OpenAI-compatible `/chat/completions` endpoint (**llama.cpp, Ollama, vLLM, LocalAI**). Fully private; set `AURSCAN_OPENAI_URL_FALLBACK` for automatic failover (e.g. GPU host → local CPU). The model is sent only when `AURSCAN_OPENAI_MODEL` is set; leave it unset and a routing proxy can select the model itself. An API key (for proxies like **LiteLLM**) goes in `AURSCAN_OPENAI_API_KEY` (or the conventional `OPENAI_API_KEY`).
 5. **`AURSCAN_BACKEND=/path/to/cmd`** → any executable that reads the prompt on stdin and prints the reply on stdout.
 6. **No backend at all** → static rules still run and block on critical matches.
 
@@ -159,6 +159,17 @@ For a **LiteLLM** proxy:
 set -Ux AURSCAN_BACKEND openai
 set -Ux AURSCAN_OPENAI_URL http://localhost:4000/v1/chat/completions
 set -Ux AURSCAN_OPENAI_MODEL gpt-4o-mini        # whatever your LiteLLM config exposes
+set -Ux AURSCAN_OPENAI_API_KEY sk-your-litellm-key
+```
+
+To let a **routing proxy** (LiteLLM, etc.) pick the model itself — e.g. so you
+can switch models at the proxy without editing env vars or restarting aurscan —
+point `AURSCAN_OPENAI_URL` at the proxy and set **no** `AURSCAN_OPENAI_MODEL`:
+
+```fish
+set -Ux AURSCAN_BACKEND openai
+set -Ux AURSCAN_OPENAI_URL http://localhost:4000/v1/chat/completions
+# no AURSCAN_OPENAI_MODEL — proxy decides
 set -Ux AURSCAN_OPENAI_API_KEY sk-your-litellm-key
 ```
 
@@ -332,7 +343,7 @@ Override the API price table (USD per million tokens) so you never depend on a s
 | `AURSCAN_MAX_PKGS` | `25` | recursion cap for AUR dependency scanning |
 | `AURSCAN_PRICE_IN` / `AURSCAN_PRICE_OUT` | built-in | USD per million tokens |
 | `AURSCAN_OPENAI_URL` / `_FALLBACK` | — | OpenAI-compatible endpoint(s) for a local model |
-| `AURSCAN_OPENAI_MODEL` | `default-model` | model name sent to the local endpoint |
+| `AURSCAN_OPENAI_MODEL` | unset / omitted | no `model` field is sent by default, letting a routing proxy (LiteLLM, etc.) pick the model; set it to pin a specific model on servers that require one |
 | `AURSCAN_OPENAI_API_KEY` | `OPENAI_API_KEY` | bearer token for the endpoint (e.g. LiteLLM); omit for open servers |
 | `AURSCAN_TIMEOUT` | `180` | per-request budget in **seconds**; raise it for slow CPU-only local models |
 | `AURSCAN_INSTRUCTIONS` | — | path to extra auditor instructions (appended) |
