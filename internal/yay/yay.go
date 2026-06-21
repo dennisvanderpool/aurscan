@@ -18,12 +18,15 @@ import (
 // aurscan-edit symlink is missing).
 const envForceEdit = "AURSCAN_EDIT_HOOK"
 
-// Wrapper is the `syay` entrypoint. It guarantees yay's editor-gate is pointed
-// at aurscan-edit, then hands off to the real yay via exec. Because yay invokes
-// the editor on every AUR PKGBUILD it is about to build — after download,
-// before build, regardless of how the package was chosen (bare `yay <term>`
-// search-install, `-S name`, or `-Syu`) and including AUR dependencies — this
-// is the one interception point that always sees the real, selected package.
+// Wrapper is the `syay` entrypoint. For build operations it points yay's
+// editor-gate at aurscan-edit, then hands off to the real yay via exec. Because
+// yay invokes the editor on every AUR PKGBUILD it is about to build — after
+// download, before build, regardless of how the package was chosen (bare
+// `yay <term>` search-install, `-S name`, or `-Syu`) and including AUR
+// dependencies — this is the one interception point that always sees the real,
+// selected package. Non-build operations (queries, searches, --version, --help,
+// removals) are passed straight through unmodified, so syay is a safe drop-in
+// for yay (`alias yay=syay`).
 func Wrapper(argv []string) {
 	yayPath, err := exec.LookPath("yay")
 	if err != nil {
@@ -35,20 +38,83 @@ func Wrapper(argv []string) {
 	}
 
 	env := os.Environ()
-	if userSetEditor(argv) {
-		// Respect an explicit --editor; chain to it after a clean scan instead.
-		fmt.Fprintln(os.Stderr, ui.Yellow(
-			"aurscan: --editor given on the command line; scanner will run first, "+
-				"then chain to your editor."))
-		argv = injectEditor(stripEditor(argv), self)
-	} else {
-		argv = injectEditor(argv, self)
+	// Only inject the PKGBUILD edit-gate for operations that actually build AUR
+	// packages. Forcing yay's edit flags onto queries/searches/version/help
+	// breaks them (e.g. `yay --version`, `yay -Ss foo`, `yay -Syu` with nothing
+	// to build), so everything else passes through untouched.
+	if buildsPackages(argv) {
+		if userSetEditor(argv) {
+			// Respect an explicit --editor; chain to it after a clean scan instead.
+			fmt.Fprintln(os.Stderr, ui.Yellow(
+				"aurscan: --editor given on the command line; scanner will run first, "+
+					"then chain to your editor."))
+			argv = injectEditor(stripEditor(argv), self)
+		} else {
+			argv = injectEditor(argv, self)
+		}
+		env = append(env, envForceEdit+"=1")
 	}
-	env = append(env, envForceEdit+"=1")
 
 	if err := syscall.Exec(yayPath, append([]string{yayPath}, argv...), env); err != nil {
 		die("exec yay failed: " + err.Error())
 	}
+}
+
+// buildsPackages reports whether a yay argv will actually fetch and build AUR
+// packages — the only case where the PKGBUILD edit-gate must fire.
+//
+// pacman/yay operations are the first uppercase letter after a single dash (or
+// a long --name): S sync, Q query, R remove, D database, F files, T deptest,
+// U upgrade-file, V version, G getpkgbuild, Y yay, P show, W web (plus -h/
+// --help). With no operation at all, yay defaults to a sync upgrade /
+// search-install, which builds. Within a sync (-S) operation the search/info/
+// list/groups/clean sub-modifiers (s/i/l/g/c) only read, they do not build.
+func buildsPackages(argv []string) bool {
+	hasOp := false     // an explicit operation flag was seen
+	isSync := false    // operation is -S / --sync
+	syncQuery := false // a non-building sync sub-modifier (search/info/list/groups/clean)
+
+loop:
+	for _, a := range argv {
+		switch {
+		case a == "--":
+			break loop // end of options; the rest are targets
+		case strings.HasPrefix(a, "--"):
+			name := strings.TrimPrefix(a, "--")
+			if i := strings.IndexByte(name, '='); i >= 0 {
+				name = name[:i]
+			}
+			switch name {
+			case "sync":
+				hasOp, isSync = true, true
+			case "query", "remove", "database", "files", "deptest",
+				"upgrade", "version", "help", "getpkgbuild", "yay", "show", "web":
+				hasOp = true
+			case "search", "info", "list", "groups", "clean":
+				syncQuery = true
+			}
+		case strings.HasPrefix(a, "-") && len(a) > 1:
+			letters := a[1:]
+			for i := 0; i < len(letters); i++ {
+				switch c := letters[i]; {
+				case c == 'h':
+					hasOp = true // -h help is a non-build operation (lowercase)
+				case c >= 'A' && c <= 'Z':
+					if !hasOp {
+						hasOp = true
+						isSync = c == 'S'
+					}
+				case c == 's' || c == 'i' || c == 'l' || c == 'g' || c == 'c':
+					syncQuery = true
+				}
+			}
+		}
+	}
+
+	if !hasOp {
+		return true // bare `yay` (-Syu) or `yay <term>` search-install → builds
+	}
+	return isSync && !syncQuery
 }
 
 func userSetEditor(argv []string) bool {
