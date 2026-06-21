@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Native yay v13 integration.** `aurscan --install-yay-hook` registers an
+  `AURPostDownload` Lua hook in `~/.config/yay/init.lua`, so plain `yay` (v13+)
+  scans every AUR package after `makepkg --verifysource` and before build — no
+  editor hijacking, and the scanner sees the *downloaded sources*, not just the
+  PKGBUILD. Existing `init.lua` is preserved; remove with `--uninstall-yay-hook`.
+  For yay < 13, keep using the `syay` wrapper.
+
 ### Changed
 - The OpenAI-compatible backend no longer sends a `model` field when
   `AURSCAN_OPENAI_MODEL` is unset (previously it sent the placeholder

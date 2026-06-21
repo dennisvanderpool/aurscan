@@ -37,8 +37,9 @@ const usage = `usage:
   aurscan --rules-only <...>       static rules only, no LLM call (free, offline)
   aurscan --score <file|dir|->     print 0-100 trust score; exit=score, 255=fail
   aurscan --edit-hook <files...>   gate mode (yay invokes this as its editor)
-  aurscan --prebuild <dir>         gate mode (paru PreBuildCommand hook)
+  aurscan --prebuild <dir>         gate mode (paru PreBuildCommand / yay v13 hook)
   aurscan --install-paru-hook      enable scanning in paru.conf (no wrapper)
+  aurscan --install-yay-hook       enable scanning in yay v13 init.lua (no wrapper)
   aurscan --debug ...              trace LLM request/response to stderr
   aurscan --version                print version and exit
   syay <yay args...>               transparent yay wrapper (symlink)
@@ -99,6 +100,34 @@ func main() {
 			fmt.Println("Removed aurscan hook from " + path)
 		} else {
 			fmt.Println("No aurscan hook found in paru.conf")
+		}
+		return
+	}
+	if len(args) > 0 && args[0] == "--install-yay-hook" {
+		path, major, err := yay.InstallYayHook()
+		if err != nil {
+			fmt.Fprintln(os.Stderr, ui.Red("error: ")+err.Error())
+			os.Exit(3)
+		}
+		fmt.Println("aurscan yay hook installed in " + path)
+		if major >= 13 {
+			fmt.Println("Plain `yay` (v" + fmt.Sprint(major) + ") will now scan AUR packages after download, before build.")
+		} else {
+			fmt.Println(ui.Red("note: ") + "yay v13+ is required for Lua hooks; this hook stays dormant on older yay.")
+			fmt.Println("      For yay < 13, use the `syay` wrapper instead (see README).")
+		}
+		return
+	}
+	if len(args) > 0 && args[0] == "--uninstall-yay-hook" {
+		path, changed, err := yay.UninstallYayHook()
+		if err != nil {
+			fmt.Fprintln(os.Stderr, ui.Red("error: ")+err.Error())
+			os.Exit(3)
+		}
+		if changed {
+			fmt.Println("Removed aurscan hook from " + path)
+		} else {
+			fmt.Println("No aurscan hook found in init.lua")
 		}
 		return
 	}
