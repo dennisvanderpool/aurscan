@@ -2,7 +2,7 @@
 # aurscan installer / updater / uninstaller.
 #
 #   ./install.sh              build (needs Go) and install/update into PREFIX/bin
-#   ./install.sh --uninstall  remove aurscan, syay, aurscan-edit from PREFIX/bin
+#   ./install.sh --uninstall  remove aurscan, syay, sparu, aurscan-edit from PREFIX/bin
 #   ./install.sh --version    show what version would be built, then exit
 #
 # PREFIX defaults to /usr/local. Set SUDO= to install without sudo.
@@ -44,7 +44,9 @@ uninstall() {
     fi
   done
   [ "$removed" = 1 ] && echo "Removed ${NAMES[*]} from $BINDIR" || echo "Nothing to remove in $BINDIR"
-  echo "Note: remove your 'alias yay=syay' too (fish: functions -e yay; funcsave yay)."
+  echo "Note: if you enabled a native hook, remove it too:"
+  echo "  aurscan --uninstall-yay-hook   /   aurscan --uninstall-paru-hook"
+  echo "  and drop any 'alias yay=syay' / 'alias paru=sparu' (fish: functions -e yay; funcsave yay)."
 }
 
 install_update() {
@@ -70,9 +72,20 @@ install_update() {
     echo "           (static rules still run with no backend.)"
   fi
   echo
-  echo "Enable the scanner:"
-  echo "  yay:  alias yay=syay  (fish: funcsave yay)"
-  echo "  paru: alias paru=sparu, OR run: aurscan --install-paru-hook"
+  echo "Enable the scanner — one command per helper:"
+  local yaymajor=0
+  if command -v yay >/dev/null; then
+    yaymajor="$(yay --version 2>/dev/null | grep -oE 'v?[0-9]+' | head -1 | tr -d v)"
+    yaymajor="${yaymajor:-0}"
+  fi
+  if [ "$yaymajor" -ge 13 ] 2>/dev/null; then
+    echo "  yay (v$yaymajor):  aurscan --install-yay-hook   (native Lua hook)"
+  elif command -v yay >/dev/null; then
+    echo "  yay (v$yaymajor):  alias yay=syay   (fish: funcsave yay)   # v13+ supports --install-yay-hook"
+  else
+    echo "  yay v13+:  aurscan --install-yay-hook    ·   older yay:  alias yay=syay"
+  fi
+  echo "  paru:      aurscan --install-paru-hook   (native PreBuildCommand hook)"
 }
 
 case "${1:-}" in
