@@ -201,7 +201,7 @@ func EditHook(paths []string) {
 		results = append(results, pipeline.Run(name, files, ""))
 	}
 
-	if !ui.Gate(results) {
+	if !ui.Gate(results, true) {
 		fmt.Fprintln(os.Stderr, ui.Red(":: aurscan blocked this build."))
 		os.Exit(maxInt(1, ui.WorstExit(results)))
 	}

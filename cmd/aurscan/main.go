@@ -196,7 +196,7 @@ func main() {
 		fmt.Fprintln(os.Stderr, ui.Red("error: ")+"nothing scanned")
 		os.Exit(3)
 	}
-	if ui.Gate(results) {
+	if ui.Gate(results, false) {
 		os.Exit(0)
 	}
 	os.Exit(maxInt(1, ui.WorstExit(results)))

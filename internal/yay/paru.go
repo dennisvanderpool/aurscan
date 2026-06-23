@@ -208,15 +208,15 @@ func PrebuildHook(args []string) {
 	res := pipeline.Run(name, files, "")
 	results := []scan.Result{res}
 
-	if res.V.Verdict == "OK" {
-		ui.Decide(results) // prints the clean line
+	if res.V.Verdict == "OK" && !res.Fallback {
+		ui.Decide(results, true) // prints the clean line
 		os.Exit(0)
 	}
 
-	// Non-OK: try to prompt on the controlling terminal.
+	// Non-OK, or a degraded fallback-OK: try to prompt on the controlling terminal.
 	if tty, err := os.OpenFile("/dev/tty", os.O_RDWR, 0); err == nil {
 		defer tty.Close()
-		if ui.GateVia(results, tty, tty) {
+		if ui.GateVia(results, tty, tty, true) {
 			fmt.Fprintln(tty, "Proceeding at your request — be careful.")
 			os.Exit(0)
 		}
@@ -225,6 +225,6 @@ func PrebuildHook(args []string) {
 	}
 
 	// No controlling terminal: fail closed.
-	ui.Decide(results)
+	ui.Decide(results, true)
 	os.Exit(maxInt(1, ui.WorstExit(results)))
 }

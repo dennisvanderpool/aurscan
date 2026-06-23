@@ -60,7 +60,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 - **Coloured output on the paru hook path (#34).** Colour is re-enabled against
   the controlling terminal when paru runs the hook with stdout redirected, and a
-  `CLICOLOR_FORCE` escape hatch was added. The "no colour with the Codex
+  `FORCE_COLOR` escape hatch was added. The "no colour with the Codex
   backend" report was in fact the paru path, not the backend. (reported by
   HaleTom)
 - **`syay` is operation-aware.** Non-build yay operations (`--version`, `-Ss`

@@ -9,14 +9,14 @@ import (
 var useColor = computeColor()
 
 // computeColor decides colour at startup: NO_COLOR always wins (disable);
-// CLICOLOR_FORCE forces colour on even when stdout is not a terminal (the
+// FORCE_COLOR forces colour on even when stdout is not a terminal (the
 // conventional escape hatch, useful when output is piped through a pager or a
 // hook that redirects stdout); otherwise colour follows whether stdout is a TTY.
 func computeColor() bool {
 	if os.Getenv("NO_COLOR") != "" {
 		return false
 	}
-	if v := os.Getenv("CLICOLOR_FORCE"); v != "" && v != "0" {
+	if v := os.Getenv("FORCE_COLOR"); v != "" && v != "0" {
 		return true
 	}
 	return IsTTY(os.Stdout)
