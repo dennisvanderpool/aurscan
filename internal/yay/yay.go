@@ -67,18 +67,24 @@ func Wrapper(argv []string) {
 // a long --name): S sync, Q query, R remove, D database, F files, T deptest,
 // U upgrade-file, V version, G getpkgbuild, Y yay, P show, W web (plus -h/
 // --help). With no operation at all, yay defaults to a sync upgrade /
-// search-install, which builds. Within a sync (-S) operation the search/info/
-// list/groups/clean sub-modifiers (s/i/l/g/c) only read, they do not build.
+// search-install, which builds. Within a sync (-S) operation the sub-modifiers
+// s/i/l/g/c/p and the -h help flag are read-only; -y alone (no -u, no
+// targets) only refreshes databases; -u (sysupgrade) triggers builds.
 func buildsPackages(argv []string) bool {
-	hasOp := false     // an explicit operation flag was seen
-	isSync := false    // operation is -S / --sync
-	syncQuery := false // a non-building sync sub-modifier (search/info/list/groups/clean)
+	hasOp := false       // an explicit operation flag was seen
+	isSync := false      // operation is -S / --sync
+	syncQuery := false   // read-only sync sub-modifier (s/i/l/g/c/p/-h)
+	syncYOnly := false   // -y/--refresh seen; non-building unless -u or targets present
+	syncUpgrade := false // -u/--sysupgrade: upgrade installed packages (builds)
+	hasTarget := false   // non-option argument (package name)
 
 loop:
 	for _, a := range argv {
 		switch {
 		case a == "--":
 			break loop // end of options; the rest are targets
+		case !strings.HasPrefix(a, "-"):
+			hasTarget = true
 		case strings.HasPrefix(a, "--"):
 			name := strings.TrimPrefix(a, "--")
 			if i := strings.IndexByte(name, '='); i >= 0 {
@@ -90,31 +96,47 @@ loop:
 			case "query", "remove", "database", "files", "deptest",
 				"upgrade", "version", "help", "getpkgbuild", "yay", "show", "web":
 				hasOp = true
-			case "search", "info", "list", "groups", "clean":
+			case "search", "info", "list", "groups", "clean", "print":
 				syncQuery = true
+			case "refresh":
+				syncYOnly = true
+			case "sysupgrade":
+				syncUpgrade = true
 			}
 		case strings.HasPrefix(a, "-") && len(a) > 1:
 			letters := a[1:]
 			for i := 0; i < len(letters); i++ {
 				switch c := letters[i]; {
 				case c == 'h':
-					hasOp = true // -h help is a non-build operation (lowercase)
+					hasOp = true
+					syncQuery = true // -h and -Sh are both non-building
 				case c >= 'A' && c <= 'Z':
 					if !hasOp {
 						hasOp = true
 						isSync = c == 'S'
 					}
-				case c == 's' || c == 'i' || c == 'l' || c == 'g' || c == 'c':
+				case c == 's' || c == 'i' || c == 'l' || c == 'g' || c == 'c' || c == 'p':
 					syncQuery = true
+				case c == 'y':
+					syncYOnly = true
+				case c == 'u':
+					syncUpgrade = true
 				}
 			}
 		}
 	}
 
 	if !hasOp {
-		return true // bare `yay` (-Syu) or `yay <term>` search-install → builds
+		return true // bare `yay` or `yay <term>` → builds
 	}
-	return isSync && !syncQuery
+	if !isSync || syncQuery {
+		return false
+	}
+	// -Sy / -Syy without -u and without package targets: refresh databases only.
+	if syncYOnly && !syncUpgrade && !hasTarget {
+		return false
+	}
+	return true
 }
 
 func userSetEditor(argv []string) bool {
