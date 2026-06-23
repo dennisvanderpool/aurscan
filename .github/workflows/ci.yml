@@ -106,22 +106,21 @@ jobs:
         with:
           files: aurscan-linux-${{ matrix.goarch }}
 
-  # Publishes a signed SHA256SUMS covering BOTH release binaries so downstream
-  # consumers can verify the bytes they download against the project's GPG key
-  # (the same key that signs the release tags). Runs only on v* tags, after both
-  # matrix legs of `release` have built and attached their binaries (#31).
+  # Derive the signing key from the imported secret material instead of
+  # trusting GPG_KEY_ID to match (the previous "No secret key" failure), prints a
+  # secret-free diagnostic, and fails clearly if GPG_PRIVATE_KEY carried no secret.
   sign:
     needs: release
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     permissions:
-      contents: write # to attach the checksums + signature to the Release
+      contents: write
     steps:
       - name: download built binaries
         uses: actions/download-artifact@v4
         with:
           path: dist
-          merge-multiple: true # flatten both per-arch artifacts into dist/
+          merge-multiple: true
 
       - name: generate SHA256SUMS
         working-directory: dist
@@ -134,8 +133,7 @@ jobs:
           GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
         run: |
           if [ -z "$GPG_PRIVATE_KEY" ]; then
-            echo "::error::GPG_PRIVATE_KEY secret is not set; cannot sign release assets (#31)."
-            exit 1
+            echo "::error::GPG_PRIVATE_KEY secret is not set"; exit 1
           fi
           export GNUPGHOME="$(mktemp -d)"
           echo "GNUPGHOME=$GNUPGHOME" >> "$GITHUB_ENV"
@@ -143,15 +141,43 @@ jobs:
           gpgconf --kill gpg-agent || true
           printf '%s\n' "$GPG_PRIVATE_KEY" | gpg --batch --import
 
+          # Fail loudly if the export contained no SECRET key (e.g. a public key
+          # was exported by mistake) — this is the usual root of "No secret key".
+          if [ "$(gpg --list-secret-keys --with-colons | grep -c '^sec')" -eq 0 ]; then
+            echo "::error::GPG_PRIVATE_KEY imported no secret key. Re-export with"
+            echo "::error::  gpg --armor --export-secret-keys <KEYID>   (or --export-secret-subkeys <SUBKEYID>!)"
+            exit 1
+          fi
+
+          # Secret-free diagnostic: which key(s) and capabilities did we get?
+          echo "---- imported secret keys ----"
+          gpg --list-secret-keys --keyid-format=long | grep -E 'sec|ssb|uid'
+
+          # Resolve the signing key. If GPG_KEY_ID is set it must match an
+          # imported secret key; otherwise auto-derive the first secret key's
+          # primary fingerprint (gpg then auto-selects its signing subkey).
+          want='${{ secrets.GPG_KEY_ID }}'
+          if [ -n "$want" ]; then
+            if ! gpg --list-secret-keys --with-colons | grep -qiE ":(${want#0x}):"; then
+              echo "::error::GPG_KEY_ID ($want) does not match any imported secret key (see list above)."
+              echo "::error::Fix GPG_KEY_ID, or unset it to auto-select the imported key."
+              exit 1
+            fi
+            key="$want"
+          else
+            key="$(gpg --list-secret-keys --with-colons | awk -F: '$1=="fpr"{print $10; exit}')"
+          fi
+          echo "SIGN_KEY=$key" >> "$GITHUB_ENV"
+          echo "Will sign with: $key"
+
       - name: sign SHA256SUMS (detached, armored)
         working-directory: dist
         env:
           GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
-          GPG_KEY_ID: ${{ secrets.GPG_KEY_ID }}
         run: |
           gpg --batch --yes --pinentry-mode loopback \
             ${GPG_PASSPHRASE:+--passphrase "$GPG_PASSPHRASE"} \
-            ${GPG_KEY_ID:+--local-user "$GPG_KEY_ID"} \
+            --local-user "$SIGN_KEY" \
             --armor --detach-sign --output SHA256SUMS.asc SHA256SUMS
           gpg --verify SHA256SUMS.asc SHA256SUMS
 
